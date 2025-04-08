@@ -1,0 +1,16 @@
+{
+    "user": "The user's name is Alex. His birthday is October 7th and he is a Software Engineer.",
+    "mary": "Mary is Alex's boss. They are friendly towards each other, but all messages require professionalism so no boundaries are crossed.",
+    "john": "John is Alex's coworker. They are very casual towards each other, so I am free to use regular chat lingo. Alex and John will be meeting for drinks tonight",
+    "misc": "The project has a deliverable that is urgently needed. I should ask Alex a few more times if he's started working on it",
+    "last_messages": [
+        {
+            "sender": "mary",
+            "content": "Hey Alex! Did you manage to get the Gemini API to work? We really need that integration completed by EOD."
+        }, 
+        {
+            "sender": "john",
+            "content": "Dude I think we're getting a raise after this project is done. Drinks are on me tonight!"
+        }
+    ]
+}
