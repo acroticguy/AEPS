@@ -8,10 +8,6 @@ from openwakeword.model import Model
 
 # Instantiate the model(s)
 
-with open("keys.json", "r") as file:
-    keys = json.load(file)
-
-porcupine = pvporcupine.create(access_key=keys["picovoice"], keyword_paths=["wakewords/Hey-Lydia_en_windows_v3_0_0.ppn"])
 def my_function_to_get_audio_frame():
     pa = pyaudio.PyAudio()
 
@@ -32,6 +28,10 @@ def my_function_to_get_audio_frame():
         if result >= 0:
             print(f"keyword found! {result}")
 
+with open("keys.json", "r") as file:
+    keys = json.load(file)
+
+porcupine = pvporcupine.create(access_key=keys["picovoice"], keyword_paths=["wakewords/Hey-Lydia_en_windows_v3_0_0.ppn"])
 
 my_function_to_get_audio_frame()
 

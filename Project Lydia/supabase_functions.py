@@ -15,6 +15,7 @@ class SBInstance:
 
         self.url = os.environ.get("SUPABASE_URL")
         self.user_key = os.environ.get("SUPABASE_KEY")
+        self.user = None
 
     def initialize(self):
         self.supabase = sb.create_client(self.url, self.user_key)
@@ -48,10 +49,45 @@ class SBInstance:
 
         if data.user:
             print(f"Sign-in successful for user: {data.user.email}")
+            self.user = data.user
             return data  # Return the auth response (includes user data, etc.)
         else:
             print("Sign-in failed (no user returned)")
             return None  # Indicate 
+        
+    def get_tasks(self, related_to=None):
+        """
+        Fetch tasks for a specific user from the Supabase database.
+        
+        Args:
+            user_id (str): The ID of the user whose tasks are to be fetched.
+        
+        Returns:
+            list: A list of tasks associated with the user.
+        """
+
+        response = (
+            self.supabase.table("tasks")
+            .select("*")
+            .eq("user_id", self.user.id)
+            .eq("chat_origin_id", related_to)
+            .execute()
+        )
+        print(f"Tasks fetched for user {self.user.id}, related to {related_to}: {response.data}")
+        return response.data
+    
+    def get_user_data(self):
+
+
+        response = (
+            self.supabase.table("profiles")
+            .select("display_name, email, lidia_instructions, work_scope")
+            .eq("id", self.user.id)
+            .execute()
+        )
+
+        print(f"User fetched: {response.data}")
+        return response.data
 
     async def get_user(self):
         session = await self.supabase.auth.get_user()

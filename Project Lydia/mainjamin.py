@@ -1,5 +1,6 @@
 import asyncio
 import os
+from lidia import Lidia
 from dotenv import load_dotenv
 from pathlib import Path
 from supabase_functions import SBInstance
@@ -21,6 +22,17 @@ def main():
     password = "password"
 
     login = sbi.sign_in(email, password)
-    print(f"The user who just logged in has the email {login.user.email}")
+    print(f"The user who just logged in has the ID {login.user.id}")
+
+    # Initialize Lidia
+    lidia_instance = Lidia(sbi)
+
+    dummy_message = {
+        "sender_name": "John Doe",
+        "sender_id": 12345,
+        "text": "Hello, this is another test message. I need you to send me the Q3 report by tomorrow. Thanks! \n TIMESTAMP: 2025-05-10 12:00:00 \n",
+    }
+
+    lidia_instance.process_notification(dummy_message)
 
 main()
