@@ -1,12 +1,12 @@
 # lidia.py handles the commmunication between the LLM and the rest of the program. Here we will do TTS, and send the text to the LLM.
 import os
 import google.genai
-import threading
-import time
+from gtts import gTTS
+import pygame
 import dotenv
-import supabase_functions
 import lidia_tools
 import json
+import io
 
 class Lidia:
     def __init__(self, sbinstance):
@@ -54,10 +54,11 @@ class Lidia:
         system_ins = f"""
             You are LiDIA, a personal assistant for workplace productivity. You're assisting {self.display_name} with their work, 
             which involves the following: {self.work_scope}. 
-            You will be given a message from Microsoft Teams, and you will create a task for it.
+            You will be given a message from Microsoft Teams, and you will create a task for it if the context makes sense.
             You can use the information from the message to figure out the task name, description, due date, and priority.
             You will also be given a list of tasks associated with the sender's ID.
             If there is no task to create, you will simply respond with a summary of the message you received, return task_created as false.
+            Also, every message that is not in English should be translated to English.
             When communicating with the user, always use the name {self.display_name}, and keep in mind the following instructions: {self.lidia_instructions}.
 
             Example scenario:
@@ -82,12 +83,13 @@ class Lidia:
             'Sender: Mary. Sender ID: 54321. Timestamp: 2025-05-18 10:00:00
             Hi {self.display_name}, can you please send the analytics data to the client? I need it by tomorrow EOD. Thanks!'
 
-            *FUNCTION CALL EXECUTION*
+            Example response:
+            'Hey {self.display_name}, Mary sent you a message asking for the analytics data. I will create a task for it.'
             - task_name: Send analytics data to the client
             - description: Send the analytics data to the client as requested by Mary.
             - due_date: 2025-05-19
             - priority: 2
-            *END OF FUNCTION CALL EXECUTION*
+            - related_id: 54321
             END OF EXAMPLE SCENARIO
             """
 
@@ -101,23 +103,31 @@ class Lidia:
         )
 
         prompt = f"""
-            Hey LiDIA, {self.display_name} has an incoming message from {message["sender_name"]} (ID: {message["sender_id"]}). 
+            Hey LiDIA, {self.display_name} has an incoming message from {message["sender_name"].title()} (ID: {message["sender_id"]}). 
             Here is the list of tasks associated with this ID: {json.dumps(tasks)}.
 
-            And here is the message: {message["text"]}
-            Create a task for it, if necessary.
+            And here is the message: {message["text"]}. Timestamp: {message["timestamp"]}.
+            In English, what is the message about? Is there a task to create? If so, please create it.
+            If not, just summarize the message.
             """
         
         lidia_res = session.send_message(prompt)
 
-        if lidia_res.candidates[0].content.parts[0].function_call:
-            function_call = lidia_res.candidates[0].content.parts[0].function_call
-            print(f"Function to call: {function_call.name}")
-            print(f"Arguments: {function_call.args}")
-        else:
-            print("No function call found in the response.")
-            print(lidia_res.text)
+        lidia_res = json.loads(lidia_res.text)
 
         # Play TTS response
 
-        print(f"Notification sent to {self.user_id}: {message}")
+        mp3_fp = io.BytesIO()
+        tts = gTTS(text=lidia_res["message"], lang="en")
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0) # Reset pointer for pygame to read from the beginning
+
+        pygame.mixer.init()
+        pygame.mixer.music.load(mp3_fp)
+        pygame.mixer.music.play()
+
+        print(f"Response from LLM: {lidia_res["message"]}")
+        if lidia_res["task_created"]:
+            print(f"Task created: {lidia_res['task']}")
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)

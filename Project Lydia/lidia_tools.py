@@ -3,7 +3,8 @@ import dotenv
 import requests
 import json
 import supabase_functions
-import datetime
+import datetime as dt
+from datetime import datetime, timezone
 from google.genai import types
 from pydantic import BaseModel
 
@@ -16,13 +17,15 @@ class Task(BaseModel):
     description: str
     due_date: str
     priority: int
+    related_id: str
 
     def to_dict(self):
         return {
             "task_name": self.task_name,
             "description": self.description,
             "due_date": self.due_date,
-            "priority": self.priority
+            "priority": self.priority,
+            "related_id": self.related_id,
         }
 
     def __str__(self):
@@ -42,26 +45,15 @@ class Reply(BaseModel):
             "response_message": self.message,
             "task": self.task.to_dict()
         }
-
-def create_task(task_name: str, description: str, due_date: str, priority: int) -> dict:
+    
+def format_date(date_str):
     """
-    Create a task with the given details.
-    
-    Args:
-        task_name (str): The name of the task.
-        description (str): A brief description of the task.
-        due_date (str): The due date for the task in YYYY-MM-DD format.
-        priority (int): The priority level of the task (1-5).
-    
-    Returns:
-        dict: The data in dictionary form.
+    Convert a date string to a datetime object.
     """
-
-    return {
-            "task_name": task_name,
-            "description": description,
-            "due_date": due_date,
-            "priority": priority
-        }
-    
-available_tools = [create_task]
+    try:
+        dt_object = datetime.strptime(date_str.replace('Z', ''), '%Y-%m-%dT%H:%M:%S.%f')
+        dt_object = dt_object.replace(tzinfo=timezone.utc)
+        return dt_object
+    except ValueError as e:
+        print(f"Error parsing date: {e}")
+        return None
