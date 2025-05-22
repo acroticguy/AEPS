@@ -108,6 +108,7 @@ class Lidia:
 
             And here is the message: {message["text"]}. Timestamp: {message["timestamp"]}.
             In English, what is the message about? Is there a task to create? If so, please create it.
+            If the task is present in the list of associated tasks already, do not create a task for it.
             If not, just summarize the message.
             """
         
@@ -128,6 +129,7 @@ class Lidia:
 
         print(f"Response from LLM: {lidia_res["message"]}")
         if lidia_res["task_created"]:
+            # Confirm task creation
             print(f"Task created: {lidia_res['task']}")
         while pygame.mixer.music.get_busy():
             pygame.time.Clock().tick(10)

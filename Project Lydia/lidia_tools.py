@@ -1,16 +1,6 @@
-import os
-import dotenv
-import requests
-import json
-import supabase_functions
-import datetime as dt
 from datetime import datetime, timezone
-from google.genai import types
 from pydantic import BaseModel
 
-dotenv.load_dotenv()
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 class Task(BaseModel):
     task_name: str
