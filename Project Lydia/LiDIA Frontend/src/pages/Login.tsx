@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom'; // Import useNavigate and useLocation
 import { supabase } from '../main'; // or your supabase client path
+import type { User } from '@supabase/supabase-js'; // Import User type
 import lidiaLogo from '../assets/lidiaLogo.png';
 import googleLogo from "../assets/googleLogo.png";
 
@@ -47,7 +48,7 @@ const Login: React.FC = () => {
   const location = useLocation(); // Hook to get location state (for redirect after login)
 
   const [email, setEmail] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
 
@@ -56,34 +57,152 @@ const Login: React.FC = () => {
   const [isTermsLinkHovered, setIsTermsLinkHovered] = useState<boolean>(false);
   const [isPrivacyLinkHovered, setIsPrivacyLinkHovered] = useState<boolean>(false);
 
+  const isProcessingSession = useRef(false);
+
   // Redirect if user is already logged in or after successful login
   useEffect(() => {
+
+    console.log(`LOGIN PAGE LOADED. Path: ${location.pathname}, State: ${JSON.stringify(location.state)}, Initial loading: ${loading}`);
+
+    const processUserSession = async (user: User, eventType: 'INITIAL_SESSION' | 'SIGNED_IN') => {
+      isProcessingSession.current = true; // Mark that we are starting to process
+      console.log(`processUserSession called for event: ${eventType}, user ID: ${user.id}`);
+      // setLoading(true); // No need to set true here if already true, or if we want to manage it carefully
+      setError('');
+      setMessage('');
+
+      // Ensure loading is true for the duration of this async operation if it wasn't already
+      // This is especially important if INITIAL_SESSION without user ran first and set loading to false
+      if (!loading) setLoading(true);
+
+
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('display_name, lidia_instructions, work_scope')
+          .eq('id', user.id)
+          .single();
+
+        console.log('Fetched profile:', profile);
+        if (profileError) console.error('Profile fetch error:', profileError);
+
+        if (profileError && profileError.code !== 'PGRST116') {
+          setError('Could not verify your profile. Please try logging in again or contact support.');
+          navigate('/questionnaire', { replace: true }); // Fallback
+          return; // Exit after navigation
+        }
+
+        const questionnaireComplete =
+          profile &&
+          profile.display_name &&
+          profile.lidia_instructions &&
+          profile.work_scope;
+
+        console.log('Is questionnaire complete?', questionnaireComplete);
+        if (profile) {
+            console.log('Profile display_name:', `"${profile.display_name}" (truthy: ${!!profile.display_name})`);
+            // ... other profile field logs
+        }
+
+        if (questionnaireComplete) {
+          console.log('Questionnaire IS complete. Determining navigation...');
+          if (eventType === 'INITIAL_SESSION') {
+            console.log('INITIAL_SESSION: Navigating to /dashboard');
+            navigate('/dashboard', { replace: true });
+          } else { // SIGNED_IN
+            const fromState = location.state?.from;
+            let intendedPath = '/dashboard';
+            if (typeof fromState === 'string' && fromState !== '/login' && fromState !== '/questionnaire') {
+                intendedPath = fromState;
+            } else if (typeof fromState === 'object' && fromState?.pathname && fromState.pathname !== '/login' && fromState.pathname !== '/questionnaire') {
+                intendedPath = fromState.pathname;
+            }
+            console.log(`SIGNED_IN: Navigating to intended path: ${intendedPath}`);
+            navigate(intendedPath, { replace: true });
+          }
+        } else {
+          console.log('Questionnaire IS NOT complete. Navigating to /questionnaire');
+          navigate('/questionnaire', { replace: true });
+        }
+      } catch (e: any) {
+        console.error(`Exception processing user session (${eventType}):`, e.message);
+        setError('An unexpected error occurred. Please try again.');
+        navigate('/questionnaire', { replace: true }); // Fallback
+      } finally {
+        // Only set loading to false if we didn't navigate away,
+        // or if a navigation error occurred and we want to show the login page again.
+        // However, since navigation should happen, this setLoading(false) might not be strictly needed
+        // if the component unmounts due to navigation.
+        // For safety, if an error occurred and we didn't navigate, we should stop loading.
+        // If navigation occurred, this component will unmount, and loading state doesn't matter.
+        console.log(`processUserSession for ${eventType} FINALLY block.`);
+        // setLoading(false); // Let the onAuthStateChange handler manage this more carefully
+        isProcessingSession.current = false;
+      }
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        console.log('User signed in:', session.user);
-        // Redirect to the questionnaire page or dashboard
-        // In a real app, use react-router-dom: navigate('/questionnaire');
-        const from = location.state?.from || '/questionnaire'; // Get intended path or default
-        navigate(from, { replace: true }); // Navigate to the intended path
+      console.log(`Auth Event: ${event}, User ID: ${session?.user?.id}, Current loading state: ${loading}`);
+
+      if (event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          // User is already logged in (e.g. refreshed /login page)
+          // setLoading(true) is handled by processUserSession if needed
+          await processUserSession(session.user, 'INITIAL_SESSION');
+          // After processUserSession, navigation should have occurred.
+          // If it navigates, this component unmounts, setLoading below is irrelevant.
+          // If it didn't navigate (e.g. error before nav), then we might need to setLoading(false)
+          // But processUserSession should handle its own loading for its scope.
+          // The overall page loading should only be false if no user processing is active.
+          if (!isProcessingSession.current) setLoading(false);
+
+        } else {
+          // No user on initial session. We are on /login. It's okay to show the form.
+          console.log("INITIAL_SESSION with no user. Setting loading to false.");
+          setLoading(false);
+        }
+      } else if (event === 'SIGNED_IN') {
+        if (session?.user) {
+          // User has just signed in (e.g., after OAuth redirect or magic link)
+          // setLoading(true) is handled by processUserSession
+          await processUserSession(session.user, 'SIGNED_IN');
+          // Similar to above, navigation should occur.
+           if (!isProcessingSession.current) setLoading(false);
+        } else {
+          // Edge case: SIGNED_IN event but no session.user? Should not happen.
+          console.warn("SIGNED_IN event but no session.user. Setting loading to false.");
+          setLoading(false);
+        }
       } else if (event === 'SIGNED_OUT') {
-        // Handle sign out if needed
-        console.log('User signed out');
+        setMessage('');
+        setError('');
+        setLoading(false);
+        // Optional: if not on /login, redirect to /login
+        // if (location.pathname !== '/login') navigate('/login', { replace: true });
+      } else if (event === 'USER_UPDATED' || event === 'PASSWORD_RECOVERY' || event === 'TOKEN_REFRESHED') {
+        // These events usually don't require immediate page loading state changes
+        // unless they affect user presence for this page.
+        console.log(`Auth Event ${event} received. No explicit loading state change here.`);
+      }
+
+      // If after all event handling, we are not processing a session and still loading, stop loading.
+      // This is a safeguard.
+      // Note: `loading` in the console.log at the start of this callback is the state *before* any setLoading call within this callback.
+      // We need to check `isProcessingSession.current` to see if an async operation *started*.
+      if (loading && !isProcessingSession.current && !session?.user) {
+         // If we are still in a loading state, and no session processing was triggered,
+         // and there's no user, then it's safe to stop page loading.
+         console.log("Safeguard: Not processing session, no user, setting loading to false.");
+         // setLoading(false); // Be careful with this, could cause rapid toggles.
+                          // The explicit setLoading(false) in INITIAL_SESSION w/o user and SIGNED_OUT should be sufficient.
       }
     });
 
-    // Check initial session
-    const checkSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-            console.log('Existing session found:', session.user);
-            window.location.href = '/questionnaire'; // Or your main app page
-        }
-    };
-    checkSession();
-
 
     return () => {
+      console.log('--- Login.tsx: useEffect for onAuthStateChange - CLEANUP ---');
       subscription?.unsubscribe();
+      isProcessingSession.current = false; // Reset ref on cleanup
     };
   }, [navigate, location.state]);
 
@@ -141,24 +260,22 @@ const Login: React.FC = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    setLoading(true);
+    setLoading(true); // Show loading for the action itself
     setMessage('');
     setError('');
     const { error: googleError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // redirectTo: `${window.location.origin}/questionnaire`,
-        // Ensure this URL is added to your Supabase project's "Redirect URLs"
+        redirectTo: `${window.location.origin}/login`, // Explicitly redirect back to login
       },
     });
 
     if (googleError) {
       setError(`Error: ${googleError.message}`);
       console.error('Error signing in with Google:', googleError);
-      setLoading(false);
+      setLoading(false); // Stop loading if OAuth init failed
     }
-    // If successful, Supabase redirects to Google, then back to your app.
-    // The onAuthStateChange listener will handle the session.
+    // If successful, Supabase redirects. onAuthStateChange will handle it on return.
   };
 
 
@@ -412,7 +529,7 @@ const Login: React.FC = () => {
               ...(isTermsLinkHovered && styles.legalLinkHover),
             }}
             onMouseEnter={() => setIsTermsLinkHovered(true)}
-            onMouseLeave={() => setIsPrivacyLinkHovered(false)} // Corrected: was setIsPrivacyLinkHovered(false)
+            onMouseLeave={() => setIsTermsLinkHovered(false)} // Corrected
             target="_blank" rel="noopener noreferrer"
           >
             Terms of Service

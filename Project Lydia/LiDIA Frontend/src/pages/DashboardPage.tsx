@@ -113,6 +113,7 @@ interface ComponentStyles {
   userCell: CSSProperties;
   actionCell: CSSProperties;
   actionDots: CSSProperties;
+  logoutButton: CSSProperties;
   // Add any other specific styles needed
 }
 
@@ -395,6 +396,16 @@ const DashboardPage: React.FC = () => {
       cursor: 'pointer',
       color: '#B0AEC0',
     },
+    logoutButton: { // Added style definition for logout button
+      padding: '10px 18px',
+      backgroundColor: '#FFFFFF', 
+      color: '#333', 
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '0.9rem',
+      fontWeight: '500',
+    },
   };
 
   const getPriorityStyle = (priority: Priority) => {
@@ -465,6 +476,10 @@ const DashboardPage: React.FC = () => {
               </button>
             </div>
           </div>
+          {/* Logout Button */}
+          <button onClick={handleLogout} style={styles.logoutButton}>
+            Logout
+          </button>
         </div>
 
         {activeView === 'list' && (
@@ -477,7 +492,7 @@ const DashboardPage: React.FC = () => {
                 <th style={{...styles.tableHeaderCell, width: '12%'}}>Priority</th>
                 <th style={{...styles.tableHeaderCell, width: '10%'}}>Date</th>
                 <th style={{...styles.tableHeaderCell, width: '10%'}}>User</th>
-                <th style={{...styles.tableHeaderCell, width: '5%'}}></th> {/* Actions */}
+                <th style={{...styles.tableHeaderCell, width: '5%'}}></th>
               </tr>
             </thead>
             <tbody>
