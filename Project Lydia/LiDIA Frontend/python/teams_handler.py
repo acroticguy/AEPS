@@ -23,18 +23,23 @@ class TeamsHandler:
     SCOPES = ["Chat.Read", "User.Read"] # Add other scopes as needed
     TOKEN_CACHE_FILE = "teams_token_cache.bin"
 
-    def __init__(self):
-        self.token = None
+    def __init__(self, token=None):
         self.token_cache = msal.SerializableTokenCache()
         if os.path.exists(self.TOKEN_CACHE_FILE):
             self.token_cache.deserialize(open(self.TOKEN_CACHE_FILE, "r").read())
+        if token:
+            self.token = token
+            self.profile = create_request(self.token, "https://graph.microsoft.com/v1.0/me").json()
+            self.save_token_cache()
+        else:
+            self.token = None
         
-        # For delegated, use PublicClientApplication
-        self.app_msal = msal.PublicClientApplication(
-            self.CLIENT_ID,
-            authority=self.AUTHORITY,
-            token_cache=self.token_cache
-        )
+            # For delegated, use PublicClientApplication
+            self.app_msal = msal.PublicClientApplication(
+                self.CLIENT_ID,
+                authority=self.AUTHORITY,
+                token_cache=self.token_cache
+            )
 
         with open("config.json", "r") as f:
             self.last_check = format_date(json.load(f).get("last_check", None))
@@ -112,8 +117,10 @@ class TeamsHandler:
         for chat in chats:
             chat["timestamp"] = chat["timestamp"].strftime('%a %d %b %Y, %I:%M%p')
 
+
+        self.last_check = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         config = {
-            "last_check": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+            "last_check": self.last_check
         }
         with open("config.json", "w") as f:
             json.dump(config, f, indent=4)

@@ -12,12 +12,24 @@ class Lidia:
     def __init__(self, sbinstance):
         dotenv.load_dotenv()
         GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-        self.gemini_model = "gemini-2.0-flash"
+        self.gemini_model = "gemini-2.0-flash-lite"
+        self.validation_model = "gemma-3-27b-it"
 
         self.sbinstance = sbinstance
 
         self.user_id = self.sbinstance.user.id
         self.client = google.genai.Client(api_key=GEMINI_API_KEY)
+
+        val_instructions = """
+            You'll be provided with messages, and I want you to reply with only "yes" if the contents of my message can be interpreted as a work related task. 
+            If they're not, just reply "no". The tasks are supposed to be ticked off, so only tasks clearly defined with deliverables should be considered valid. 
+            Okay?"""
+        
+        self.val_session = self.client.chats.create(
+            model=self.validation_model,
+        )
+
+        self.val_session.send_message(val_instructions)
 
         res = self.sbinstance.get_user_data()
         if res is None:
@@ -118,18 +130,22 @@ class Lidia:
 
         # Play TTS response
 
-        mp3_fp = io.BytesIO()
-        tts = gTTS(text=lidia_res["message"], lang="en")
-        tts.write_to_fp(mp3_fp)
-        mp3_fp.seek(0) # Reset pointer for pygame to read from the beginning
-
-        pygame.mixer.init()
-        pygame.mixer.music.load(mp3_fp)
-        pygame.mixer.music.play()
-
+        lidia_tools.tts(lidia_res["message"])
         print(f"Response from LLM: {lidia_res["message"]}")
         if lidia_res["task_created"]:
             # Confirm task creation
-            print(f"Task created: {lidia_res['task']}")
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
+            validation_prompt = f"{lidia_res['task']['task_name']} \n\n{lidia_res['task']['description']}"
+            val_res = self.val_session.send_message(validation_prompt)
+            if val_res.text.strip().lower() == "yes":
+                print("Task is valid, posting to the database.")
+                task = lidia_tools.Task(
+                    task_name=lidia_res["task"]["task_name"],
+                    description=lidia_res["task"]["description"],
+                    due_date=lidia_res["task"]["due_date"],
+                    priority=lidia_res["task"]["priority"],
+                    related_id=message["sender_id"]
+                )
+                self.sbinstance.post_task(task.to_dict())
+                print(f"Task created: {lidia_res['task']}")
+            else:
+                print("Task was rejected by the validation model.")

@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 from pydantic import BaseModel
+from gtts import gTTS
+import pygame
+import io
 
 
 class Task(BaseModel):
@@ -15,7 +18,7 @@ class Task(BaseModel):
             "description": self.description,
             "due_date": self.due_date,
             "priority": self.priority,
-            "related_id": self.related_id,
+            "chat_origin_id": self.related_id,
         }
 
     def __str__(self):
@@ -47,3 +50,17 @@ def format_date(date_str):
     except ValueError as e:
         print(f"Error parsing date: {e}")
         return None
+    
+def tts(text):
+    mp3_fp = io.BytesIO()
+    tts = gTTS(text=text, lang="en")
+    tts.write_to_fp(mp3_fp)
+    mp3_fp.seek(0) # Reset pointer for pygame to read from the beginning
+
+    pygame.mixer.init()
+    pygame.mixer.music.load(mp3_fp)
+    pygame.mixer.music.play()
+
+    print(f"TTS Response: {text}")
+    while pygame.mixer.music.get_busy():
+        pygame.time.Clock().tick(10)

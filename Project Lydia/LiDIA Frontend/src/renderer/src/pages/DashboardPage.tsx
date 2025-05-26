@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom'; // Import useNavigate and useLocation
-import { supabase } from '../main'; // or your supabase client path
-
-// Placeholder for actual image assets if you were to import them:
-// import userAvatarPlaceholder from '../assets/user-avatar.png';
+import { supabase, acquireMsalToken } from '../main'; // or your supabase client path
 
 // --- Types ---
 interface TodaysTask {
@@ -114,6 +111,9 @@ interface ComponentStyles {
   actionCell: CSSProperties;
   actionDots: CSSProperties;
   logoutButton: CSSProperties;
+  runScriptButton: CSSProperties;
+  pythonOutputArea: CSSProperties;
+  pythonErrorArea: CSSProperties;
   // Add any other specific styles needed
 }
 
@@ -125,6 +125,11 @@ const DashboardPage: React.FC = () => {
   const [activeIssues, setActiveIssues] = useState<ActiveIssue[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeView, setActiveView] = useState<'list' | 'grid' | 'calendar'>('list');
+
+  const [pythonOutput, setPythonOutput] = useState('');
+  const [pythonError, setPythonError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isScriptRunning, setIsScriptRunning] = useState(false);
 
   // Simulate API calls
   useEffect(() => {
@@ -167,16 +172,164 @@ const DashboardPage: React.FC = () => {
 
     fetchTodaysTasks();
     fetchActiveIssues();
-  }, [navigate]);
+
+
+    if (window.electronAPI) {
+      // These listeners will be cleaned up when the component unmounts
+      window.electronAPI.onPythonStdout((event, data) => {
+        setPythonOutput((prev) => prev + data);
+      });
+
+      window.electronAPI.onPythonStderr((event, data) => {
+        setPythonError((prev) => prev + data);
+      });
+
+      window.electronAPI.onPythonScriptComplete((event, returnCode, stderr) => {
+        setIsLoading(false);
+        setIsScriptRunning(false);
+        if (returnCode !== 0) {
+          setPythonError((prev) => prev + `\nScript exited with code: ${returnCode}`);
+        }
+        if (stderr) {
+          setPythonError((prev) => prev + `\nFinal Error from Main Process: ${stderr}`);
+        }
+      });
+    }
+
+    return () => {
+      // Remove listeners when component unmounts
+      if (window.electronAPI) {
+        window.electronAPI.removePythonStdoutListener();
+        window.electronAPI.removePythonStderrListener();
+        window.electronAPI.removePythonScriptCompleteListener();
+        // Also attempt to stop script if it's running
+        if (isScriptRunning) { // Use the current state here, or pass it into the cleanup function
+          console.log('Component unmounting, attempting to stop Python script...');
+          window.electronAPI.stopPythonScript().catch(e => console.error('Error stopping script on unmount:', e));
+        }
+      }
+    };
+
+  }, [navigate, isScriptRunning]);
+
+  const runPythonScriptOnMount = useCallback(async () => {
+    if (isScriptRunning) {
+      console.warn("Python script is already running. Please wait or stop it first.");
+      return;
+    }
+
+    setIsLoading(true);
+    setIsScriptRunning(true);
+    setPythonOutput(''); // Clear previous output
+    setPythonError(''); // Clear previous error
+
+    // Check if the Electron API is available before calling it
+    if (window.electronAPI) {
+      try {
+        console.log('Running Python script...');
+
+        // Set up IPC listeners for streaming output
+        window.electronAPI.onPythonStdout((event, data: string) => {
+          setPythonOutput((prev) => prev + data);
+        });
+
+        window.electronAPI.onPythonStderr((event, data: string) => {
+          setPythonError((prev) => prev + data);
+        });
+
+        // Listen for script completion/exit
+        window.electronAPI.onPythonScriptComplete((event, returnCode: number, stderr: string) => {
+          setIsLoading(false);
+          setIsScriptRunning(false);
+          if (returnCode !== 0) {
+            setPythonError((prev) => prev + `\nScript exited with code: ${returnCode}`);
+          }
+          if (stderr) {
+            setPythonError((prev) => prev + `\nFinal Error from Main Process: ${stderr}`);
+          }
+          console.log('Python script finished via IPC.');
+          // Clean up listeners after script completes if they are temporary
+          // For persistent listeners, you might remove them in useEffect cleanup
+        });
+
+        acquireMsalToken().then(async (msalToken: string) => {
+          console.log('Acquired MSAL token:', msalToken);
+          const { data: { session } } = await supabase.auth.getSession();
+          const accessToken: string = session?.access_token || '';
+          const refreshToken: string = session?.refresh_token || '';
+
+          // Now run the Python script with the acquired tokens
+          // The return value of runPythonScript is now just a confirmation that it started
+          await window.electronAPI.runPythonScript([accessToken, refreshToken, msalToken]);
+          console.log('Python script execution initiated.');
+        });
+
+      } catch (error: any) {
+        console.error('Error invoking Python script via Electron API:', error);
+        setPythonError((prev) => prev + `\nError during Electron API call: ${error.message}`);
+        setIsLoading(false);
+        setIsScriptRunning(false);
+      }
+    } else {
+      console.warn("Electron API not available. Cannot run Python script outside Electron environment.");
+      setIsLoading(false);
+      setIsScriptRunning(false);
+      setPythonError("Electron API not available.");
+    }
+  }, [isScriptRunning]);
+
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Error logging out:', error);
-    } else {
-      navigate('/login'); // Redirect to login after logout
+    console.log('Attempting logout from DashboardPage...');
+    const { data: { session: preLogoutSession } } = await supabase.auth.getSession();
+    console.log('Session state just before signOut:', preLogoutSession);
+
+    if (!preLogoutSession) {
+      console.warn('No active session found before signOut. Redirecting to login anyway.');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        console.error('Error logging out:', error);
+        // Display a user-friendly error message if needed
+      } else {
+        console.log('Successfully logged out.');
+        navigate('/login'); // Redirect to login after successful logout
+      }
+    } catch (e: any) {
+      console.error('An unexpected error occurred during logout:', e);
+      // This catches any synchronous errors during the signOut call
     }
   };
+
+  // const handleRunPython = async () => {
+  //   setIsLoading(true);
+  //   setPythonOutput('');
+  //   setPythonError('');
+  //   try {
+  //     // Pass arguments to the Python script
+  //     const result = await window.electronAPI.runPythonScript(['arg1', 'ACCESS_TOKEN']);
+  //     console.log('Python script finished:', result);
+  //     // Final output might be captured in the result object, or just rely on streaming
+  //     if (result.stderr) {
+  //       setPythonError((prev) => prev + '\nFinal Error: ' + result.stderr);
+  //     }
+  //     if (result.returnCode !== 0) {
+  //       setPythonError((prev) => prev + `\nScript exited with code: ${result.returnCode}`);
+  //     }
+  //   } catch (error: any) {
+  //     console.error('Error running Python script:', error);
+  //     setPythonError((prev) => prev + `\nFailed to execute script: ${error.message}`);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
+  // handleRunPython();
 
   const styles: ComponentStyles = {
     appContainer: {
@@ -406,6 +559,45 @@ const DashboardPage: React.FC = () => {
       fontSize: '0.9rem',
       fontWeight: '500',
     },
+    runScriptButton: {
+      padding: '10px 18px',
+      backgroundColor: '#9575CD', // A nice purple
+      color: '#FFFFFF',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '0.9rem',
+      fontWeight: '500',
+      marginRight: '15px', // Space between this and other elements
+      opacity: isScriptRunning ? 0.6 : 1, // Indicate disabled state
+      pointerEvents: isScriptRunning ? 'none' : 'auto', // Disable clicks when running
+    },
+    pythonOutputArea: {
+      backgroundColor: '#111',
+      color: '#00FF00', // Green text for output
+      padding: '15px',
+      borderRadius: '8px',
+      marginTop: '20px',
+      minHeight: '100px',
+      maxHeight: '300px',
+      overflowY: 'auto',
+      whiteSpace: 'pre-wrap', // Preserve whitespace and wrap text
+      fontFamily: 'monospace',
+      border: '1px solid #3A1F5F',
+    },
+    pythonErrorArea: {
+      backgroundColor: '#440000', // Dark red for errors
+      color: '#FF0000', // Red text for errors
+      padding: '15px',
+      borderRadius: '8px',
+      marginTop: '10px',
+      minHeight: '50px',
+      maxHeight: '150px',
+      overflowY: 'auto',
+      whiteSpace: 'pre-wrap',
+      fontFamily: 'monospace',
+      border: '1px solid #FF0000',
+    },
   };
 
   const getPriorityStyle = (priority: Priority) => {
@@ -476,11 +668,33 @@ const DashboardPage: React.FC = () => {
               </button>
             </div>
           </div>
+          {/* New Button to Run Python Script */}
+          <button
+            onClick={runPythonScriptOnMount}
+            style={styles.runScriptButton}
+            disabled={isLoading || isScriptRunning} // Disable if already loading or running
+          >
+            {isLoading || isScriptRunning ? 'Running...' : 'Run Python Script'}
+          </button>
           {/* Logout Button */}
           <button onClick={handleLogout} style={styles.logoutButton}>
             Logout
           </button>
         </div>
+
+        {/* Python Script Output Area */}
+        {pythonOutput && (
+          <div>
+            <h3>Python Output:</h3>
+            <pre style={styles.pythonOutputArea}>{pythonOutput}</pre>
+          </div>
+        )}
+        {pythonError && (
+          <div>
+            <h3>Python Errors:</h3>
+            <pre style={styles.pythonErrorArea}>{pythonError}</pre>
+          </div>
+        )}
 
         {activeView === 'list' && (
           <table style={styles.issuesTable}>

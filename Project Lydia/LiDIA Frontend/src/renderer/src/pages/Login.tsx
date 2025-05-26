@@ -1,20 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Import useNavigate and useLocation
-import { supabase } from '../main'; // or your supabase client path
-import type { User } from '@supabase/supabase-js'; // Import User type
+import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../main';
+import type { User } from '@supabase/supabase-js';
 import lidiaLogo from '../assets/lidiaLogo.png';
 import googleLogo from "../assets/googleLogo.png";
 
 // --- Supabase Client Setup ---
-// IMPORTANT: Replace with your actual Supabase URL and Anon Key
-// It's best practice to put this in a separate file (e.g., src/supabaseClient.ts)
-// and import it where needed.
-// For the main LIDIA logo
 const LOGO_URL: string = lidiaLogo;
 const GOOGLE_ICON_SVG_DATA_URI: string = googleLogo;
 
-// Interface for the styles object
+// Interface for the styles object (keep as is)
 interface ComponentStyles {
   loginContainer: CSSProperties;
   waveBase: CSSProperties;
@@ -38,17 +34,17 @@ interface ComponentStyles {
   legalText: CSSProperties;
   legalLink: CSSProperties;
   legalLinkHover: CSSProperties;
-  messageText: CSSProperties; // For error/success messages
-  loadingSpinner?: CSSProperties; // Optional: for a spinner
+  messageText: CSSProperties;
+  loadingSpinner?: CSSProperties;
 }
 
 const Login: React.FC = () => {
 
-  const navigate = useNavigate(); // Hook for navigation
-  const location = useLocation(); // Hook to get location state (for redirect after login)
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true); // Start loading true to check session
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
 
@@ -59,22 +55,20 @@ const Login: React.FC = () => {
 
   const isProcessingSession = useRef(false);
 
-  // Redirect if user is already logged in or after successful login
   useEffect(() => {
-
     console.log(`LOGIN PAGE LOADED. Path: ${location.pathname}, State: ${JSON.stringify(location.state)}, Initial loading: ${loading}`);
 
     const processUserSession = async (user: User, eventType: 'INITIAL_SESSION' | 'SIGNED_IN') => {
-      isProcessingSession.current = true; // Mark that we are starting to process
+      if (isProcessingSession.current) {
+        console.log("Already processing session, skipping redundant call.");
+        return;
+      }
+      isProcessingSession.current = true;
       console.log(`processUserSession called for event: ${eventType}, user ID: ${user.id}`);
-      // setLoading(true); // No need to set true here if already true, or if we want to manage it carefully
+      setLoading(true); // Ensure loading is true while processing
+
       setError('');
       setMessage('');
-
-      // Ensure loading is true for the duration of this async operation if it wasn't already
-      // This is especially important if INITIAL_SESSION without user ran first and set loading to false
-      if (!loading) setLoading(true);
-
 
       try {
         const { data: profile, error: profileError } = await supabase
@@ -84,151 +78,115 @@ const Login: React.FC = () => {
           .single();
 
         console.log('Fetched profile:', profile);
-        if (profileError) console.error('Profile fetch error:', profileError);
 
-        if (profileError && profileError.code !== 'PGRST116') {
-          setError('Could not verify your profile. Please try logging in again or contact support.');
-          navigate('/questionnaire', { replace: true }); // Fallback
-          return; // Exit after navigation
+        let questionnaireComplete = false;
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+          if (profileError.code === 'PGRST116') { // No rows found, profile doesn't exist for this user
+             console.log('Profile does not exist for this user. Redirecting to questionnaire.');
+             // questionnaireComplete remains false
+          } else {
+            setError('Could not verify your profile. Please try logging in again or contact support.');
+            setLoading(false);
+            isProcessingSession.current = false;
+            return;
+          }
+        } else {
+            questionnaireComplete =
+                profile &&
+                profile.display_name &&
+                profile.lidia_instructions &&
+                profile.work_scope;
         }
-
-        const questionnaireComplete =
-          profile &&
-          profile.display_name &&
-          profile.lidia_instructions &&
-          profile.work_scope;
 
         console.log('Is questionnaire complete?', questionnaireComplete);
-        if (profile) {
-            console.log('Profile display_name:', `"${profile.display_name}" (truthy: ${!!profile.display_name})`);
-            // ... other profile field logs
-        }
 
         if (questionnaireComplete) {
           console.log('Questionnaire IS complete. Determining navigation...');
-          if (eventType === 'INITIAL_SESSION') {
-            console.log('INITIAL_SESSION: Navigating to /dashboard');
-            navigate('/dashboard', { replace: true });
-          } else { // SIGNED_IN
-            const fromState = location.state?.from;
-            let intendedPath = '/dashboard';
+          const fromState = location.state?.from;
+          let intendedPath = '/dashboard';
+
+          if (fromState) {
             if (typeof fromState === 'string' && fromState !== '/login' && fromState !== '/questionnaire') {
-                intendedPath = fromState;
+              intendedPath = fromState;
             } else if (typeof fromState === 'object' && fromState?.pathname && fromState.pathname !== '/login' && fromState.pathname !== '/questionnaire') {
-                intendedPath = fromState.pathname;
+              intendedPath = fromState.pathname;
             }
-            console.log(`SIGNED_IN: Navigating to intended path: ${intendedPath}`);
-            navigate(intendedPath, { replace: true });
           }
+          console.log(`Navigating to intended path: ${intendedPath}`);
+          navigate(intendedPath, { replace: true });
         } else {
-          console.log('Questionnaire IS NOT complete. Navigating to /questionnaire');
+          console.log('Questionnaire IS NOT complete or profile missing. Navigating to /questionnaire');
           navigate('/questionnaire', { replace: true });
         }
       } catch (e: any) {
         console.error(`Exception processing user session (${eventType}):`, e.message);
         setError('An unexpected error occurred. Please try again.');
-        navigate('/questionnaire', { replace: true }); // Fallback
+        setLoading(false);
       } finally {
-        // Only set loading to false if we didn't navigate away,
-        // or if a navigation error occurred and we want to show the login page again.
-        // However, since navigation should happen, this setLoading(false) might not be strictly needed
-        // if the component unmounts due to navigation.
-        // For safety, if an error occurred and we didn't navigate, we should stop loading.
-        // If navigation occurred, this component will unmount, and loading state doesn't matter.
-        console.log(`processUserSession for ${eventType} FINALLY block.`);
-        // setLoading(false); // Let the onAuthStateChange handler manage this more carefully
         isProcessingSession.current = false;
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(`Auth Event: ${event}, User ID: ${session?.user?.id}, Current loading state: ${loading}`);
-
-      if (event === 'INITIAL_SESSION') {
-        if (session?.user) {
-          // User is already logged in (e.g. refreshed /login page)
-          // setLoading(true) is handled by processUserSession if needed
-          await processUserSession(session.user, 'INITIAL_SESSION');
-          // After processUserSession, navigation should have occurred.
-          // If it navigates, this component unmounts, setLoading below is irrelevant.
-          // If it didn't navigate (e.g. error before nav), then we might need to setLoading(false)
-          // But processUserSession should handle its own loading for its scope.
-          // The overall page loading should only be false if no user processing is active.
-          if (!isProcessingSession.current) setLoading(false);
-
-        } else {
-          // No user on initial session. We are on /login. It's okay to show the form.
-          console.log("INITIAL_SESSION with no user. Setting loading to false.");
-          setLoading(false);
-        }
-      } else if (event === 'SIGNED_IN') {
-        if (session?.user) {
-          // User has just signed in (e.g., after OAuth redirect or magic link)
-          // setLoading(true) is handled by processUserSession
-          await processUserSession(session.user, 'SIGNED_IN');
-          // Similar to above, navigation should occur.
-           if (!isProcessingSession.current) setLoading(false);
-        } else {
-          // Edge case: SIGNED_IN event but no session.user? Should not happen.
-          console.warn("SIGNED_IN event but no session.user. Setting loading to false.");
-          setLoading(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        setMessage('');
-        setError('');
+    // Get initial session status immediately
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log(`Initial getSession: User ID: ${session?.user?.id}, Current loading state: ${loading}`);
+      if (session?.user) {
+        // User is already logged in on initial load
+        await processUserSession(session.user, 'INITIAL_SESSION');
+      } else {
+        // No user on initial session, ensure we are on /login and stop loading
+        console.log("No user in initial session. Setting loading to false and ensuring we are on /login.");
         setLoading(false);
-        // Optional: if not on /login, redirect to /login
-        // if (location.pathname !== '/login') navigate('/login', { replace: true });
-      } else if (event === 'USER_UPDATED' || event === 'PASSWORD_RECOVERY' || event === 'TOKEN_REFRESHED') {
-        // These events usually don't require immediate page loading state changes
-        // unless they affect user presence for this page.
-        console.log(`Auth Event ${event} received. No explicit loading state change here.`);
-      }
-
-      // If after all event handling, we are not processing a session and still loading, stop loading.
-      // This is a safeguard.
-      // Note: `loading` in the console.log at the start of this callback is the state *before* any setLoading call within this callback.
-      // We need to check `isProcessingSession.current` to see if an async operation *started*.
-      if (loading && !isProcessingSession.current && !session?.user) {
-         // If we are still in a loading state, and no session processing was triggered,
-         // and there's no user, then it's safe to stop page loading.
-         console.log("Safeguard: Not processing session, no user, setting loading to false.");
-         // setLoading(false); // Be careful with this, could cause rapid toggles.
-                          // The explicit setLoading(false) in INITIAL_SESSION w/o user and SIGNED_OUT should be sufficient.
+        if (location.pathname !== '/login') {
+            navigate('/login', { replace: true }); // Ensure redirection to login if not already there
+        }
       }
     });
 
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`Auth Event: ${event}, User ID: ${session?.user?.id}, Current processing ref: ${isProcessingSession.current}`);
+
+      if (session?.access_token) {
+        console.log("Supabase Access Token:", session.access_token);
+      }
+
+      // Only process if not already processing from the initial getSession call or another event
+      if (!isProcessingSession.current) {
+        if (event === 'SIGNED_IN') {
+          if (session?.user) {
+            await processUserSession(session.user, 'SIGNED_IN');
+          } else {
+            console.warn("SIGNED_IN event but no session.user. Setting loading to false.");
+            setLoading(false);
+             if (location.pathname !== '/login') {
+                navigate('/login', { replace: true }); // Ensure redirection to login if no session user
+            }
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setMessage('');
+          setError('');
+          setLoading(false);
+          console.log("SIGNED_OUT event. Navigating to /login if not already there.");
+          if (location.pathname !== '/login') {
+            navigate('/login', { replace: true });
+          }
+        }
+      }
+    });
 
     return () => {
       console.log('--- Login.tsx: useEffect for onAuthStateChange - CLEANUP ---');
       subscription?.unsubscribe();
       isProcessingSession.current = false; // Reset ref on cleanup
     };
-  }, [navigate, location.state]);
+  }, [navigate, location.state, location.pathname]);
 
-  useEffect(() => {
-    document.body.style.margin = '0';
-    document.body.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
-    document.body.style.backgroundColor = '#1a0d4a';
-    document.documentElement.style.height = '100%';
-    document.body.style.height = '100%';
-    const rootElement = document.getElementById('root');
-    if (rootElement) {
-      rootElement.style.height = '100%';
-    }
 
-    return () => {
-      document.body.style.margin = '';
-      document.body.style.fontFamily = '';
-      document.body.style.backgroundColor = '';
-      document.documentElement.style.height = '';
-      document.body.style.height = '';
-      if (rootElement) {
-        rootElement.style.height = '';
-      }
-    };
-  }, []);
-
+  // (rest of your component's styling and form submission handlers go here)
   const handleEmailSignUp = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setLoading(true);
@@ -244,9 +202,7 @@ const Login: React.FC = () => {
     const { error: signUpError } = await supabase.auth.signInWithOtp({
       email: email,
       options: {
-        // emailRedirectTo: `${window.location.origin}/questionnaire`, // Or your desired redirect path
-        // This will be the page the user is redirected to after clicking the magic link.
-        // Ensure this URL is added to your Supabase project's "Redirect URLs"
+        emailRedirectTo: `${window.location.origin}/login`,
       },
     });
 
@@ -260,24 +216,22 @@ const Login: React.FC = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    setLoading(true); // Show loading for the action itself
+    setLoading(true);
     setMessage('');
     setError('');
     const { error: googleError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/login`, // Explicitly redirect back to login
+        redirectTo: `${window.location.origin}/login`,
       },
     });
 
     if (googleError) {
       setError(`Error: ${googleError.message}`);
       console.error('Error signing in with Google:', googleError);
-      setLoading(false); // Stop loading if OAuth init failed
+      setLoading(false);
     }
-    // If successful, Supabase redirects. onAuthStateChange will handle it on return.
   };
-
 
   const styles: ComponentStyles = {
     loginContainer: {
@@ -371,7 +325,7 @@ const Login: React.FC = () => {
       cursor: 'pointer',
       transition: 'background-color 0.2s ease, transform 0.1s ease',
       boxSizing: 'border-box',
-      opacity: loading ? 0.7 : 1, // Dim button when loading
+      opacity: loading ? 0.7 : 1,
     },
     primaryButton: {
       backgroundColor: '#0c0a2c',
@@ -441,10 +395,11 @@ const Login: React.FC = () => {
     event: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>,
     action: 'down' | 'up'
   ) => {
-    if (loading) return; // Don't allow interaction if loading
+    if (loading) return;
     const target = event.currentTarget as HTMLButtonElement;
     target.style.transform = action === 'down' ? 'scale(0.98)' : 'scale(1)';
   };
+
 
   return (
     <div style={styles.loginContainer}>
@@ -523,20 +478,20 @@ const Login: React.FC = () => {
         <p style={styles.legalText}>
           By clicking continue, you agree to our{' '}
           <a
-            href="/terms" // Replace with your actual terms link
+            href="/terms"
             style={{
               ...styles.legalLink,
               ...(isTermsLinkHovered && styles.legalLinkHover),
             }}
             onMouseEnter={() => setIsTermsLinkHovered(true)}
-            onMouseLeave={() => setIsTermsLinkHovered(false)} // Corrected
+            onMouseLeave={() => setIsTermsLinkHovered(false)}
             target="_blank" rel="noopener noreferrer"
           >
             Terms of Service
           </a>{' '}
           and{' '}
           <a
-            href="/privacy" // Replace with your actual privacy link
+            href="/privacy"
             style={{
               ...styles.legalLink,
               ...(isPrivacyLinkHovered && styles.legalLinkHover),

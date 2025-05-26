@@ -17,12 +17,20 @@ class SBInstance:
         self.user_key = os.environ.get("SUPABASE_KEY")
         self.user = None
 
-    def initialize(self):
+    def initialize(self, access_token=None, refresh_token=None):
         self.supabase = sb.create_client(self.url, self.user_key)
         if self.supabase:
             print("Supabase Client has been initialized")
         else:
             print("There was a problem with Client Initialization")
+        if access_token and refresh_token:
+            self.supabase.auth.set_session(access_token, refresh_token)
+            data = self.supabase.auth.get_session()
+            if data.user:
+                print(f"Authentication successful for user: {data.user.email}")
+                self.user = data.user
+            else:
+                print("Authentication failed (no user returned)")
 
     def sign_up(self, email, password):
         data = self.supabase.auth.sign_up(
@@ -93,3 +101,22 @@ class SBInstance:
         session = await self.supabase.auth.get_user()
         return session
 
+    def post_task(self, task):
+        """
+        Post a new task to the Supabase database.
+        
+        Args:
+            task (dict): A dictionary containing task details.
+        
+        Returns:
+            dict: The response from the Supabase database after posting the task.
+        """
+
+
+        response = (
+            self.supabase.table("tasks")
+            .insert(task)
+            .execute()
+        )
+        print(f"Task posted: {response.data}")
+        return response.data
