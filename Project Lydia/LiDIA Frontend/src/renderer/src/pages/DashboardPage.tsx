@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Import useNavigate and useLocation
-import { supabase, acquireMsalToken } from '../main'; // or your supabase client path
+import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../main';
 
 // --- Types ---
 interface TodaysTask {
@@ -10,16 +10,17 @@ interface TodaysTask {
   completed: boolean; // For visual representation
 }
 
-type Priority = 'High' | 'Medium' | 'Low';
+type Priority = 'High' | 'Medium' | 'Low'; // Still use these for display
 
 interface ActiveIssue {
-  id: string; // e.g., FIG-123
-  title: string;
-  project: string;
-  priority: Priority;
-  date: string; // e.g., "Dec 5"
+  id: string; // Corresponds to task_id (or a unique identifier)
+  title: string; // Corresponds to task_name or description
+  project: string; // We'll infer or use a placeholder for now as 'project' is not directly in 'tasks' table
+  priority: Priority; // Mapped from 1-5 to High/Medium/Low
+  date: string; // Corresponds to due_date
   userAvatarUrl?: string; // URL to user avatar
   userNameFallback: string; // e.g., "JD" for John Doe
+  description?: string; // Added description field for Active Issues
 }
 
 // --- Icon SVGs (Simple Placeholders) ---
@@ -68,9 +69,8 @@ const UserAvatarPlaceholder = ({ fallback }: { fallback: string }) => (
   <div style={{
     width: '28px', height: '28px', borderRadius: '50%', backgroundColor: '#555',
     display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '12px', fontWeight: 'bold',
-    backgroundImage: 'url("https://source.unsplash.com/random/50x50?face")' // Random placeholder
+    backgroundImage: 'url("https://source.unsplash.com/random/50x50?face")'
   }}>
-    {/* {fallback} Optional: show fallback if image fails, but here we assume bg image works */}
   </div>
 );
 
@@ -114,8 +114,28 @@ interface ComponentStyles {
   runScriptButton: CSSProperties;
   pythonOutputArea: CSSProperties;
   pythonErrorArea: CSSProperties;
-  // Add any other specific styles needed
+  developerModeContainer: CSSProperties;
+  developerModeCheckbox: CSSProperties;
+  developerModeLabel: CSSProperties;
+  expandedDescriptionRow: CSSProperties; // New style for expanded description row
+  expandedDescriptionCell: CSSProperties; // New style for the cell containing the description
 }
+
+// Helper to format date as "Month Day" (e.g., "Dec 5")
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) {
+    return dateString; // Return original if invalid date
+  }
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
+};
+
+// Helper to map numeric priority to string
+const mapPriority = (priority: number): Priority => {
+  if (priority >= 4) return 'High';
+  if (priority >= 2) return 'Medium';
+  return 'Low';
+};
 
 // --- Main Component ---
 const DashboardPage: React.FC = () => {
@@ -130,52 +150,96 @@ const DashboardPage: React.FC = () => {
   const [pythonError, setPythonError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isScriptRunning, setIsScriptRunning] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
 
-  // Simulate API calls
+  // New state for tracking expanded task ID
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+
+  // Function to toggle description visibility
+  const toggleDescription = (taskId: string) => {
+    setExpandedTaskId(prevId => (prevId === taskId ? null : taskId));
+  };
+
+  // Fetch tasks from Supabase
   useEffect(() => {
-    // Fetch Today's Tasks (mock)
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    const checkSessionAndFetchTasks = async () => {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+        navigate('/login');
+        return;
+      }
       if (!session) {
         navigate('/login');
+        return;
       }
-    };
-    checkSession();
-    const fetchTodaysTasks = async () => {
-      // Replace with actual API call:
-      // const response = await fetch('/api/todays-tasks?date=today');
-      // const data = await response.json();
-      const mockData: TodaysTask[] = [
-        { id: '1', text: 'Call Sarah', completed: false },
-        { id: '2', text: 'Write email', completed: false },
-        { id: '3', text: '5 pm meeting', completed: false },
-        { id: '4', text: 'Finish presentation', completed: true }, // Example of completed
-        { id: '5', text: 'Write annual report', completed: false },
-      ];
-      setTodaysTasks(mockData);
+
+      const userId = session.user?.id;
+      if (!userId) {
+        console.error('User ID not found in session.');
+        navigate('/login');
+        return;
+      }
+
+      const { data: tasks, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', userId); // Filter by user_id
+
+      if (error) {
+        console.error('Error fetching tasks:', error);
+        return;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Normalize today to start of day
+
+      const fetchedTodaysTasks: TodaysTask[] = [];
+      const fetchedActiveIssues: ActiveIssue[] = [];
+
+      tasks.forEach((task: any) => { // Assuming 'any' for now, can create a specific Supabase task type
+        const taskDueDate = new Date(task.due_date);
+        taskDueDate.setHours(0, 0, 0, 0); // Normalize task due date
+
+        const commonTaskProps = {
+          id: task.id || `task-${task.created_at}`, // Use actual ID or a fallback
+          title: task.task_name || 'No title', // Use task_name
+          description: task.description || 'No description', // Use description
+          date: formatDate(task.due_date),
+          priority: mapPriority(task.priority),
+          project: 'General', // Placeholder, as 'project' is not in the tasks table
+          userNameFallback: session.user?.email ? session.user.email.substring(0, 2).toUpperCase() : 'UN', // Use user's initials
+        };
+
+        if (taskDueDate.getTime() === today.getTime()) {
+          fetchedTodaysTasks.push({
+            id: commonTaskProps.id,
+            text: commonTaskProps.title,
+            completed: false, // You might need a 'completed' column in your DB
+            // Removed dueDate and description from TodaysTask as per new interface
+          });
+        }
+        // Add all tasks to active issues for now, or apply further filtering logic
+        // For 'Active Issues', we might want tasks due today or in the near future, or incomplete tasks.
+        // For simplicity, let's just add all fetched tasks here as active issues.
+        fetchedActiveIssues.push({
+            id: commonTaskProps.id,
+            title: commonTaskProps.title,
+            project: commonTaskProps.project,
+            priority: commonTaskProps.priority,
+            date: commonTaskProps.date,
+            userNameFallback: commonTaskProps.userNameFallback,
+            description: commonTaskProps.description // Include description for the modal
+        });
+      });
+
+      setTodaysTasks(fetchedTodaysTasks);
+      setActiveIssues(fetchedActiveIssues);
     };
 
-    // Fetch Active Issues (mock)
-    const fetchActiveIssues = async () => {
-      const mockData: ActiveIssue[] = [
-        { id: 'FIG-123', title: 'Task 1', project: 'Project1', priority: 'High', date: 'Dec 5', userNameFallback: 'AW' },
-        { id: 'FIG-122', title: 'Task 2', project: 'Acme GTM', priority: 'Low', date: 'Dec 5', userNameFallback: 'BX' },
-        { id: 'FIG-121', title: 'Write blog post for demo day', project: 'Acme GTM', priority: 'High', date: 'Dec 5', userNameFallback: 'CY' },
-        { id: 'FIG-120', title: 'Publish blog page', project: 'Website launch', priority: 'Low', date: 'Dec 5', userNameFallback: 'DZ' },
-        { id: 'FIG-119', title: 'Add gradients to design system', project: 'Design backlog', priority: 'Medium', date: 'Dec 5', userNameFallback: 'EA' },
-        { id: 'FIG-118', title: 'Responsive behavior doesn\'t work on Android', project: 'Bug fixes', priority: 'Medium', date: 'Dec 5', userNameFallback: 'FB' },
-        { id: 'FIG-117', title: 'Confirmation states not rendering properly', project: 'Bug fixes', priority: 'Medium', date: 'Dec 5', userNameFallback: 'GC' },
-        { id: 'FIG-116', title: 'Text wrapping is awkward on older iPhones', project: 'Bug fixes', priority: 'Low', date: 'Dec 5', userNameFallback: 'HD' },
-      ];
-      setActiveIssues(mockData);
-    };
-
-    fetchTodaysTasks();
-    fetchActiveIssues();
-
+    checkSessionAndFetchTasks();
 
     if (window.electronAPI) {
-      // These listeners will be cleaned up when the component unmounts
       window.electronAPI.onPythonStdout((event, data) => {
         setPythonOutput((prev) => prev + data);
       });
@@ -197,13 +261,11 @@ const DashboardPage: React.FC = () => {
     }
 
     return () => {
-      // Remove listeners when component unmounts
       if (window.electronAPI) {
         window.electronAPI.removePythonStdoutListener();
         window.electronAPI.removePythonStderrListener();
         window.electronAPI.removePythonScriptCompleteListener();
-        // Also attempt to stop script if it's running
-        if (isScriptRunning) { // Use the current state here, or pass it into the cleanup function
+        if (isScriptRunning) {
           console.log('Component unmounting, attempting to stop Python script...');
           window.electronAPI.stopPythonScript().catch(e => console.error('Error stopping script on unmount:', e));
         }
@@ -220,15 +282,13 @@ const DashboardPage: React.FC = () => {
 
     setIsLoading(true);
     setIsScriptRunning(true);
-    setPythonOutput(''); // Clear previous output
-    setPythonError(''); // Clear previous error
+    setPythonOutput('');
+    setPythonError('');
 
-    // Check if the Electron API is available before calling it
     if (window.electronAPI) {
       try {
         console.log('Running Python script...');
 
-        // Set up IPC listeners for streaming output
         window.electronAPI.onPythonStdout((event, data: string) => {
           setPythonOutput((prev) => prev + data);
         });
@@ -237,7 +297,6 @@ const DashboardPage: React.FC = () => {
           setPythonError((prev) => prev + data);
         });
 
-        // Listen for script completion/exit
         window.electronAPI.onPythonScriptComplete((event, returnCode: number, stderr: string) => {
           setIsLoading(false);
           setIsScriptRunning(false);
@@ -248,21 +307,14 @@ const DashboardPage: React.FC = () => {
             setPythonError((prev) => prev + `\nFinal Error from Main Process: ${stderr}`);
           }
           console.log('Python script finished via IPC.');
-          // Clean up listeners after script completes if they are temporary
-          // For persistent listeners, you might remove them in useEffect cleanup
         });
 
-        acquireMsalToken().then(async (msalToken: string) => {
-          console.log('Acquired MSAL token:', msalToken);
-          const { data: { session } } = await supabase.auth.getSession();
-          const accessToken: string = session?.access_token || '';
-          const refreshToken: string = session?.refresh_token || '';
-
-          // Now run the Python script with the acquired tokens
-          // The return value of runPythonScript is now just a confirmation that it started
-          await window.electronAPI.runPythonScript([accessToken, refreshToken, msalToken]);
-          console.log('Python script execution initiated.');
-        });
+        const { data: { session } } = await supabase.auth.getSession();
+        const msalToken: string = session?.provider_token || '';
+        const accessToken: string = session?.access_token || '';
+        const refreshToken: string = session?.refresh_token || '';
+        await window.electronAPI.runPythonScript([accessToken, refreshToken, msalToken]);
+        console.log('Python script execution initiated.');
 
       } catch (error: any) {
         console.error('Error invoking Python script via Electron API:', error);
@@ -279,73 +331,36 @@ const DashboardPage: React.FC = () => {
   }, [isScriptRunning]);
 
 
-  const handleLogout = async () => {
-    console.log('Attempting logout from DashboardPage...');
-    const { data: { session: preLogoutSession } } = await supabase.auth.getSession();
-    console.log('Session state just before signOut:', preLogoutSession);
+  const handleLogout = useCallback(async () => {
+    const { error: supabaseSignOutError } = await supabase.auth.signOut();
 
-    if (!preLogoutSession) {
-      console.warn('No active session found before signOut. Redirecting to login anyway.');
-      navigate('/login');
-      return;
+    if (supabaseSignOutError) {
+      console.error('Error signing out of Supabase:', supabaseSignOutError);
+    } else {
+      console.log('Signed out of Supabase.');
     }
 
-    try {
-      const { error } = await supabase.auth.signOut();
+    const microsoftLogoutUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent('http://localhost:5173/login')}`;
 
-      if (error) {
-        console.error('Error logging out:', error);
-        // Display a user-friendly error message if needed
-      } else {
-        console.log('Successfully logged out.');
-        navigate('/login'); // Redirect to login after successful logout
-      }
-    } catch (e: any) {
-      console.error('An unexpected error occurred during logout:', e);
-      // This catches any synchronous errors during the signOut call
-    }
-  };
+    window.location.href = microsoftLogoutUrl;
 
-  // const handleRunPython = async () => {
-  //   setIsLoading(true);
-  //   setPythonOutput('');
-  //   setPythonError('');
-  //   try {
-  //     // Pass arguments to the Python script
-  //     const result = await window.electronAPI.runPythonScript(['arg1', 'ACCESS_TOKEN']);
-  //     console.log('Python script finished:', result);
-  //     // Final output might be captured in the result object, or just rely on streaming
-  //     if (result.stderr) {
-  //       setPythonError((prev) => prev + '\nFinal Error: ' + result.stderr);
-  //     }
-  //     if (result.returnCode !== 0) {
-  //       setPythonError((prev) => prev + `\nScript exited with code: ${result.returnCode}`);
-  //     }
-  //   } catch (error: any) {
-  //     console.error('Error running Python script:', error);
-  //     setPythonError((prev) => prev + `\nFailed to execute script: ${error.message}`);
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
-
-  // handleRunPython();
+  }, []);
 
   const styles: ComponentStyles = {
     appContainer: {
       display: 'flex',
       height: '100vh',
       fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-      backgroundColor: '#1E0A3C', // Darkest background for overall page
+      backgroundColor: '#1E0A3C',
       color: '#E0E0E0',
     },
     sidebar: {
       width: '280px',
-      backgroundColor: '#1E0A3C', // Dark purple sidebar
+      backgroundColor: '#1E0A3C',
       padding: '20px',
       display: 'flex',
       flexDirection: 'column',
-      borderRight: '1px solid #3A1F5F', // Subtle separator
+      borderRight: '1px solid #3A1F5F',
     },
     sidebarHeader: {
       fontSize: '1.4rem',
@@ -365,7 +380,7 @@ const DashboardPage: React.FC = () => {
       padding: '10px 5px',
       marginBottom: '8px',
       borderRadius: '6px',
-      backgroundColor: '#2B124A', // Slightly lighter purple for items
+      backgroundColor: '#2B124A',
       cursor: 'pointer',
       transition: 'background-color 0.2s',
     },
@@ -373,15 +388,11 @@ const DashboardPage: React.FC = () => {
       width: '18px',
       height: '18px',
       borderRadius: '50%',
-      border: '2px solid #9575CD', // Light purple border
+      border: '2px solid #9575CD',
       backgroundColor: 'transparent',
       marginRight: '12px',
       display: 'inline-block',
     },
-    // taskCheckboxCompleted: { // TODO: Style for completed state
-    //   backgroundColor: '#7E57C2',
-    //   borderColor: '#7E57C2',
-    // },
     taskText: {
       fontSize: '0.95rem',
       color: '#E0E0E0',
@@ -405,7 +416,7 @@ const DashboardPage: React.FC = () => {
     },
     mainContent: {
       flex: 1,
-      backgroundColor: '#3A1F5F', // Lighter purple for main area
+      backgroundColor: '#3A1F5F',
       padding: '25px 30px',
       overflowY: 'auto',
     },
@@ -431,7 +442,7 @@ const DashboardPage: React.FC = () => {
       backgroundColor: '#FFFFFF',
       borderRadius: '6px',
       padding: '0px 10px',
-      width: '300px', // Adjust as needed
+      width: '300px',
     },
     searchInput: {
       border: 'none',
@@ -477,44 +488,44 @@ const DashboardPage: React.FC = () => {
       justifyContent: 'center',
     },
     viewToggleButtonActive: {
-      backgroundColor: '#2B124A', // Dark purple selected
+      backgroundColor: '#2B124A',
       color: '#FFFFFF',
     },
     issuesTable: {
       width: '100%',
       borderCollapse: 'separate',
-      borderSpacing: '0 10px', // Creates space between rows
-      backgroundColor: '#2B124A', // Header and row background
-      borderRadius: '8px', // Overall table rounding (might need wrapper)
+      borderSpacing: '0 10px',
+      backgroundColor: '#2B124A',
+      borderRadius: '8px',
       padding: '10px',
     },
     tableHeaderRow: {
       textAlign: 'left',
-      color: '#C0B9D1', // Lighter text for headers
+      color: '#C0B9D1',
       fontSize: '0.9rem',
       textTransform: 'uppercase',
       fontWeight: 'bold',
     },
     tableHeaderCell: {
       padding: '12px 15px',
-      borderBottom: '2px solid #3A1F5F', // Separator for header
+      borderBottom: '2px solid #3A1F5F',
     },
     tableRow: {
-      backgroundColor: '#2B124A', // Rows have the same darker purple
+      backgroundColor: '#2B124A',
       color: '#E0E0E0',
-       // borderRadius: '6px', // This won't work directly on tr, style td instead or use border-spacing
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)', // Subtle shadow for rows
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+      cursor: 'pointer', // Make table rows clickable
     },
     tableCell: {
       padding: '15px 15px',
-      borderBottom: '1px solid #3A1F5F', // Separator between rows
+      borderBottom: '1px solid #3A1F5F',
       verticalAlign: 'middle',
     },
     projectTag: {
-      backgroundColor: '#111', // Dark tag
+      backgroundColor: '#111',
       color: '#FFFFFF',
       padding: '4px 10px',
-      borderRadius: '12px', // Pill shape
+      borderRadius: '12px',
       fontSize: '0.8rem',
       display: 'inline-block',
       border: '1px solid #444',
@@ -530,13 +541,13 @@ const DashboardPage: React.FC = () => {
       minWidth: '60px',
     },
     priorityTagHigh: {
-      backgroundColor: '#E91E63', // Pink
+      backgroundColor: '#E91E63',
     },
     priorityTagMedium: {
-      backgroundColor: '#AB47BC', // Light Purple
+      backgroundColor: '#AB47BC',
     },
     priorityTagLow: {
-      backgroundColor: '#7E57C2', // Darker Purple
+      backgroundColor: '#7E57C2',
     },
     userCell: {
       display: 'flex',
@@ -549,10 +560,10 @@ const DashboardPage: React.FC = () => {
       cursor: 'pointer',
       color: '#B0AEC0',
     },
-    logoutButton: { // Added style definition for logout button
+    logoutButton: {
       padding: '10px 18px',
-      backgroundColor: '#FFFFFF', 
-      color: '#333', 
+      backgroundColor: '#FFFFFF',
+      color: '#333',
       border: 'none',
       borderRadius: '6px',
       cursor: 'pointer',
@@ -561,33 +572,33 @@ const DashboardPage: React.FC = () => {
     },
     runScriptButton: {
       padding: '10px 18px',
-      backgroundColor: '#9575CD', // A nice purple
+      backgroundColor: '#9575CD',
       color: '#FFFFFF',
       border: 'none',
       borderRadius: '6px',
       cursor: 'pointer',
       fontSize: '0.9rem',
       fontWeight: '500',
-      marginRight: '15px', // Space between this and other elements
-      opacity: isScriptRunning ? 0.6 : 1, // Indicate disabled state
-      pointerEvents: isScriptRunning ? 'none' : 'auto', // Disable clicks when running
+      marginRight: '15px',
+      opacity: isScriptRunning ? 0.6 : 1,
+      pointerEvents: isScriptRunning ? 'none' : 'auto',
     },
     pythonOutputArea: {
       backgroundColor: '#111',
-      color: '#00FF00', // Green text for output
+      color: '#00FF00',
       padding: '15px',
       borderRadius: '8px',
       marginTop: '20px',
       minHeight: '100px',
       maxHeight: '300px',
       overflowY: 'auto',
-      whiteSpace: 'pre-wrap', // Preserve whitespace and wrap text
+      whiteSpace: 'pre-wrap',
       fontFamily: 'monospace',
       border: '1px solid #3A1F5F',
     },
     pythonErrorArea: {
-      backgroundColor: '#440000', // Dark red for errors
-      color: '#FF0000', // Red text for errors
+      backgroundColor: '#440000',
+      color: '#FF0000',
       padding: '15px',
       borderRadius: '8px',
       marginTop: '10px',
@@ -597,6 +608,35 @@ const DashboardPage: React.FC = () => {
       whiteSpace: 'pre-wrap',
       fontFamily: 'monospace',
       border: '1px solid #FF0000',
+    },
+    developerModeContainer: {
+      display: 'flex',
+      alignItems: 'center',
+      marginLeft: '15px',
+      color: '#E0E0E0',
+    },
+    developerModeCheckbox: {
+      marginRight: '5px',
+      width: '18px',
+      height: '18px',
+      cursor: 'pointer',
+    },
+    developerModeLabel: {
+      fontSize: '0.9rem',
+      cursor: 'pointer',
+    },
+    expandedDescriptionRow: {
+      backgroundColor: '#3A1F5F', // A slightly different background for the expanded row
+      color: '#E0E0E0',
+      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+      borderBottom: '1px solid #4A2B73',
+    },
+    expandedDescriptionCell: {
+      padding: '15px 15px 20px 15px',
+      fontSize: '0.9rem',
+      lineHeight: '1.5',
+      whiteSpace: 'pre-wrap', // Preserve line breaks
+      gridColumn: '1 / -1', // Span across all columns in the table
     },
   };
 
@@ -616,7 +656,10 @@ const DashboardPage: React.FC = () => {
         <h2 style={styles.sidebarHeader}>Today's Tasks</h2>
         <ul style={styles.todaysTaskList}>
           {todaysTasks.map(task => (
-            <li key={task.id} style={styles.todaysTaskItem}>
+            <li
+              key={task.id}
+              style={styles.todaysTaskItem}
+            >
               <span style={{
                 ...styles.taskCheckbox,
                 ...(task.completed ? { backgroundColor: '#7E57C2', borderColor: '#7E57C2' } : {})
@@ -668,11 +711,23 @@ const DashboardPage: React.FC = () => {
               </button>
             </div>
           </div>
+          {/* Developer Mode Checkbox */}
+          <div style={styles.developerModeContainer}>
+            <input
+              type="checkbox"
+              id="developerMode"
+              checked={developerMode}
+              onChange={(e) => setDeveloperMode(e.target.checked)}
+              style={styles.developerModeCheckbox}
+            />
+            <label htmlFor="developerMode" style={styles.developerModeLabel}>Developer Mode</label>
+          </div>
+
           {/* New Button to Run Python Script */}
           <button
             onClick={runPythonScriptOnMount}
             style={styles.runScriptButton}
-            disabled={isLoading || isScriptRunning} // Disable if already loading or running
+            disabled={isLoading || isScriptRunning}
           >
             {isLoading || isScriptRunning ? 'Running...' : 'Run Python Script'}
           </button>
@@ -682,14 +737,14 @@ const DashboardPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Python Script Output Area */}
-        {pythonOutput && (
+        {/* Python Script Output Area - Conditionally rendered based on developerMode */}
+        {developerMode && pythonOutput && (
           <div>
             <h3>Python Output:</h3>
             <pre style={styles.pythonOutputArea}>{pythonOutput}</pre>
           </div>
         )}
-        {pythonError && (
+        {developerMode && pythonError && (
           <div>
             <h3>Python Errors:</h3>
             <pre style={styles.pythonErrorArea}>{pythonError}</pre>
@@ -700,10 +755,9 @@ const DashboardPage: React.FC = () => {
           <table style={styles.issuesTable}>
             <thead>
               <tr style={styles.tableHeaderRow}>
-                <th style={{...styles.tableHeaderCell, width: '10%'}}>Task</th>
-                <th style={{...styles.tableHeaderCell, width: '35%'}}>Title</th>
-                <th style={{...styles.tableHeaderCell, width: '18%'}}>Project</th>
-                <th style={{...styles.tableHeaderCell, width: '12%'}}>Priority</th>
+                <th style={{...styles.tableHeaderCell, width: '40%'}}>Title</th>
+                <th style={{...styles.tableHeaderCell, width: '20%'}}>Project</th>
+                <th style={{...styles.tableHeaderCell, width: '15%'}}>Priority</th>
                 <th style={{...styles.tableHeaderCell, width: '10%'}}>Date</th>
                 <th style={{...styles.tableHeaderCell, width: '10%'}}>User</th>
                 <th style={{...styles.tableHeaderCell, width: '5%'}}></th>
@@ -713,28 +767,35 @@ const DashboardPage: React.FC = () => {
               {activeIssues
                 .filter(issue => issue.title.toLowerCase().includes(searchTerm.toLowerCase()))
                 .map(issue => (
-                <tr key={issue.id} style={styles.tableRow}>
-                  <td style={styles.tableCell}>{issue.id}</td>
-                  <td style={styles.tableCell}>{issue.title}</td>
-                  <td style={styles.tableCell}>
-                    <span style={styles.projectTag}>{issue.project}</span>
-                  </td>
-                  <td style={styles.tableCell}>
-                    <span style={getPriorityStyle(issue.priority)}>{issue.priority}</span>
-                  </td>
-                  <td style={styles.tableCell}>{issue.date}</td>
-                  <td style={{...styles.tableCell, ...styles.userCell}}>
-                    <UserAvatarPlaceholder fallback={issue.userNameFallback} />
-                  </td>
-                  <td style={{...styles.tableCell, ...styles.actionCell}}>
-                    <span style={styles.actionDots}><MoreDotsIcon /></span>
-                  </td>
-                </tr>
+                <React.Fragment key={issue.id}>
+                  <tr style={styles.tableRow} onClick={() => toggleDescription(issue.id)}>
+                    <td style={styles.tableCell}>{issue.title}</td>
+                    <td style={styles.tableCell}>
+                      <span style={styles.projectTag}>{issue.project}</span>
+                    </td>
+                    <td style={styles.tableCell}>
+                      <span style={getPriorityStyle(issue.priority)}>{issue.priority}</span>
+                    </td>
+                    <td style={styles.tableCell}>{issue.date}</td>
+                    <td style={{...styles.tableCell, ...styles.userCell}}>
+                      <UserAvatarPlaceholder fallback={issue.userNameFallback} />
+                    </td>
+                    <td style={{...styles.tableCell, ...styles.actionCell}}>
+                      <span style={styles.actionDots}><MoreDotsIcon /></span>
+                    </td>
+                  </tr>
+                  {expandedTaskId === issue.id && (
+                    <tr style={styles.expandedDescriptionRow}>
+                      <td colSpan={6} style={styles.expandedDescriptionCell}>
+                        <b>Description:</b><br />{issue.description || 'No description available.'}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         )}
-        {/* Placeholder for Grid and Calendar views */}
         {activeView === 'grid' && <p>Grid view is not implemented.</p>}
         {activeView === 'calendar' && <p>Calendar view is not implemented.</p>}
       </div>

@@ -30,6 +30,7 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()], // Ensure your React plugin is here!
+    base: './',
     root: 'src/renderer', // <--- IMPORTANT: Tells Vite where your renderer's source is
     build: {
       outDir: 'out/renderer', // <--- IMPORTANT: This is where Vite will output the built app

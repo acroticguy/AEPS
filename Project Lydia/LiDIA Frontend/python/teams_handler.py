@@ -41,8 +41,11 @@ class TeamsHandler:
                 token_cache=self.token_cache
             )
 
-        with open("config.json", "r") as f:
-            self.last_check = format_date(json.load(f).get("last_check", None))
+        if not os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                self.last_check = format_date(json.load(f).get("last_check", None))
+        else:
+            self.last_check = dt.datetime.now(timezone.utc) - dt.timedelta(weeks=2) # Default to 2 weeks ago if no config file exists
 
     def save_token_cache(self):
         if self.token_cache.has_state_changed:
@@ -118,9 +121,9 @@ class TeamsHandler:
             chat["timestamp"] = chat["timestamp"].strftime('%a %d %b %Y, %I:%M%p')
 
 
-        self.last_check = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        self.last_check = datetime.now(timezone.utc)
         config = {
-            "last_check": self.last_check
+            "last_check": self.last_check.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         }
         with open("config.json", "w") as f:
             json.dump(config, f, indent=4)

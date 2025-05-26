@@ -4,11 +4,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../main';
 import type { User } from '@supabase/supabase-js';
 import lidiaLogo from '../assets/lidiaLogo.png';
-import googleLogo from "../assets/googleLogo.png";
+import microsoftLogo from "../assets/Microsoft_icon.svg";
 
 // --- Supabase Client Setup ---
 const LOGO_URL: string = lidiaLogo;
-const GOOGLE_ICON_SVG_DATA_URI: string = googleLogo;
+const AZURE_ICON_SVG_DATA_URI: string = microsoftLogo;
 
 // Interface for the styles object (keep as is)
 interface ComponentStyles {
@@ -20,17 +20,10 @@ interface ComponentStyles {
   logo: CSSProperties;
   welcomeTitle: CSSProperties;
   subtitle: CSSProperties;
-  formTitle: CSSProperties;
-  inputField: CSSProperties;
   button: CSSProperties;
-  primaryButton: CSSProperties;
-  primaryButtonHover: CSSProperties;
-  divider: CSSProperties;
-  dividerLine: CSSProperties;
-  dividerText: CSSProperties;
-  googleButton: CSSProperties;
-  googleButtonHover: CSSProperties;
-  googleIcon: CSSProperties;
+  azureButton: CSSProperties;
+  azureButtonHover: CSSProperties;
+  azureIcon: CSSProperties;
   legalText: CSSProperties;
   legalLink: CSSProperties;
   legalLinkHover: CSSProperties;
@@ -43,13 +36,11 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true); // Start loading true to check session
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
 
-  const [isPrimaryButtonHovered, setIsPrimaryButtonHovered] = useState<boolean>(false);
-  const [isGoogleButtonHovered, setIsGoogleButtonHovered] = useState<boolean>(false);
+  const [isAzureButtonHovered, setIsAzureButtonHovered] = useState<boolean>(false);
   const [isTermsLinkHovered, setIsTermsLinkHovered] = useState<boolean>(false);
   const [isPrivacyLinkHovered, setIsPrivacyLinkHovered] = useState<boolean>(false);
 
@@ -186,49 +177,25 @@ const Login: React.FC = () => {
   }, [navigate, location.state, location.pathname]);
 
 
-  // (rest of your component's styling and form submission handlers go here)
-  const handleEmailSignUp = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
+  const handleAzureSignIn = async () => {
     setLoading(true);
     setMessage('');
-    setError('');
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          scopes: 'email offline_access User.Read profile',
+          redirectTo: 'http://localhost:5173/dashboard', // This should point to your dashboard
+          prompt: 'select_account',
+        },
+      });
 
-    if (!email) {
-        setError("Please enter your email address.");
-        setLoading(false);
-        return;
-    }
-
-    const { error: signUpError } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/login`,
-      },
-    });
-
-    if (signUpError) {
-      setError(`Error: ${signUpError.message}`);
-      console.error('Error signing up with email:', signUpError);
-    } else {
-      setMessage('Check your email for the login link!');
-    }
-    setLoading(false);
-  };
-
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setMessage('');
-    setError('');
-    const { error: googleError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/login`,
-      },
-    });
-
-    if (googleError) {
-      setError(`Error: ${googleError.message}`);
-      console.error('Error signing in with Google:', googleError);
+      if (error) {
+        throw error;
+      }
+      // Supabase will handle the redirect.
+    } catch (error: any) {
+      setMessage(`Error: ${error.message || 'Could not sign in with Microsoft.'}`);
       setLoading(false);
     }
   };
@@ -274,120 +241,91 @@ const Login: React.FC = () => {
       flexDirection: 'column',
       alignItems: 'center',
       textAlign: 'center',
-      color: '#fff',
       maxWidth: '380px',
       width: '100%',
       padding: '30px',
       boxSizing: 'border-box',
+      borderRadius: '15px',
+      background: 'rgba(255, 255, 255, 1)',
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)',
+      border: '1px solid rgba(220, 220, 220, 0.8)',
     },
     logo: {
-      width: '100px',
+      width: '120px',
       height: 'auto',
-      marginBottom: '20px',
-      filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.3))',
+      marginBottom: '30px',
+      filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.2)) invert(32%) sepia(37%) saturate(2878%) hue-rotate(287deg) brightness(88%) contrast(92%)'
     },
     welcomeTitle: {
-      fontSize: '2.2rem',
+      fontSize: '2.5rem',
       fontWeight: 'bold',
-      margin: '0 0 5px 0',
-      color: '#ffffff',
-      textShadow: '1px 1px 3px rgba(0,0,0,0.2)',
+      margin: '0 0 10px 0',
+      color: '#333333',
+      textShadow: 'none',
     },
     subtitle: {
-      fontSize: '1rem',
-      margin: '0 0 30px 0',
-      color: '#e0c6f5',
-    },
-    formTitle: {
       fontSize: '1.1rem',
-      fontWeight: 600,
-      margin: '0 0 15px 0',
-      color: '#ffffff',
-    },
-    inputField: {
-      width: '100%',
-      padding: '12px 15px',
-      marginBottom: '15px',
-      border: '1px solid #ddd',
-      borderRadius: '8px',
-      fontSize: '1rem',
-      boxSizing: 'border-box',
-      backgroundColor: '#fff',
-      color: '#333',
+      margin: '0 0 40px 0',
+      color: '#666666',
     },
     button: {
       width: '100%',
-      padding: '12px 15px',
+      padding: '15px 20px',
       border: 'none',
-      borderRadius: '8px',
-      fontSize: '1rem',
-      fontWeight: 600,
+      borderRadius: '10px',
+      fontSize: '1.1rem',
+      fontWeight: 700,
       cursor: 'pointer',
-      transition: 'background-color 0.2s ease, transform 0.1s ease',
+      transition: 'background-color 0.3s ease, transform 0.1s ease, box-shadow 0.3s ease',
       boxSizing: 'border-box',
       opacity: loading ? 0.7 : 1,
+      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
     },
-    primaryButton: {
-      backgroundColor: '#0c0a2c',
-      color: 'white',
-      marginBottom: '20px',
-    },
-    primaryButtonHover: {
-      backgroundColor: '#1e1c4a',
-    },
-    divider: {
-      display: 'flex',
-      alignItems: 'center',
-      width: '100%',
-      margin: '15px 0',
-    },
-    dividerLine: {
-      flexGrow: 1,
-      height: '1px',
-      backgroundColor: '#8a69a0',
-    },
-    dividerText: {
-      padding: '0 15px',
-      fontSize: '0.9rem',
-      color: '#d0b3e5',
-    },
-    googleButton: {
-      backgroundColor: '#f0f0f0',
-      color: '#333',
+    azureButton: {
+      backgroundColor: '#333333', // Carbon color
+      color: '#ffffff', // White text
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: '10px',
-      marginBottom: '25px',
+      gap: '12px',
+      marginBottom: '30px',
     },
-    googleButtonHover: {
-      backgroundColor: '#e0e0e0',
+    azureButtonHover: {
+      backgroundColor: '#555555', // Lighter carbon on hover
+      transform: 'translateY(-2px)',
+      boxShadow: '0 6px 12px rgba(0,0,0,0.2)',
     },
-    googleIcon: {
-      width: '20px',
-      height: '20px',
+    azureIcon: {
+      width: '24px',
+      height: '24px',
     },
     legalText: {
-      fontSize: '0.8rem',
-      color: '#e0c6f5',
-      lineHeight: 1.5,
+      fontSize: '0.85rem',
+      color: '#888888',
+      lineHeight: 1.6,
+      marginTop: '20px',
     },
     legalLink: {
-      color: '#ffffff',
-      textDecoration: 'underline',
-      fontWeight: 500,
+      color: '#007bff', // Blue for hyperlinks
+      textDecoration: 'none',
+      fontWeight: 600,
       cursor: 'pointer',
+      transition: 'color 0.2s ease',
     },
     legalLinkHover: {
-      textDecoration: 'none',
+      color: '#0056b3', // Darker blue on hover
+      textDecoration: 'underline',
     },
     messageText: {
       width: '100%',
-      padding: '10px',
-      margin: '10px 0',
-      borderRadius: '5px',
+      padding: '12px',
+      margin: '15px 0',
+      borderRadius: '8px',
       textAlign: 'center',
-      fontSize: '0.9rem',
+      fontSize: '0.95rem',
+      fontWeight: 500,
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     },
   };
 
@@ -397,7 +335,7 @@ const Login: React.FC = () => {
   ) => {
     if (loading) return;
     const target = event.currentTarget as HTMLButtonElement;
-    target.style.transform = action === 'down' ? 'scale(0.98)' : 'scale(1)';
+    target.style.transform = action === 'down' ? 'scale(0.97)' : 'scale(1)';
   };
 
 
@@ -408,10 +346,8 @@ const Login: React.FC = () => {
 
       <div style={styles.contentWrapper}>
         <img src={LOGO_URL} alt="LIDIA Logo" style={styles.logo} />
-        <h1 style={styles.welcomeTitle}>Welcome To LIDIA</h1>
+        <h1 style={styles.welcomeTitle}>Welcome to LiDIA</h1> {/* Changed text here */}
         <p style={styles.subtitle}>Your smart personal assistant</p>
-
-        <h2 style={styles.formTitle}>Create an account or Sign in</h2>
 
         {message && (
           <p style={{ ...styles.messageText, backgroundColor: '#d4edda', color: '#155724' }}>
@@ -424,55 +360,23 @@ const Login: React.FC = () => {
           </p>
         )}
 
-        <input
-          type="email"
-          placeholder="email@domain.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={styles.inputField}
-          disabled={loading}
-        />
         <button
           style={{
             ...styles.button,
-            ...styles.primaryButton,
-            ...(isPrimaryButtonHovered && !loading && styles.primaryButtonHover),
+            ...styles.azureButton,
+            ...(isAzureButtonHovered && !loading && styles.azureButtonHover),
           }}
-          onMouseEnter={() => setIsPrimaryButtonHovered(true)}
-          onMouseLeave={() => setIsPrimaryButtonHovered(false)}
+          onMouseEnter={() => setIsAzureButtonHovered(true)}
+          onMouseLeave={() => setIsAzureButtonHovered(false)}
           onMouseDown={(e) => handleButtonInteraction(e, 'down')}
           onMouseUp={(e) => handleButtonInteraction(e, 'up')}
           onTouchStart={(e) => handleButtonInteraction(e, 'down')}
           onTouchEnd={(e) => handleButtonInteraction(e, 'up')}
-          onClick={handleEmailSignUp}
+          onClick={handleAzureSignIn}
           disabled={loading}
         >
-          {loading ? 'Sending...' : 'Continue with Email'}
-        </button>
-
-        <div style={styles.divider}>
-          <span style={styles.dividerLine}></span>
-          <span style={styles.dividerText}>or</span>
-          <span style={styles.dividerLine}></span>
-        </div>
-
-        <button
-          style={{
-            ...styles.button,
-            ...styles.googleButton,
-            ...(isGoogleButtonHovered && !loading && styles.googleButtonHover),
-          }}
-          onMouseEnter={() => setIsGoogleButtonHovered(true)}
-          onMouseLeave={() => setIsGoogleButtonHovered(false)}
-          onMouseDown={(e) => handleButtonInteraction(e, 'down')}
-          onMouseUp={(e) => handleButtonInteraction(e, 'up')}
-          onTouchStart={(e) => handleButtonInteraction(e, 'down')}
-          onTouchEnd={(e) => handleButtonInteraction(e, 'up')}
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-        >
-          <img src={GOOGLE_ICON_SVG_DATA_URI} alt="Google" style={styles.googleIcon} />
-          {loading ? 'Redirecting...' : 'Continue with Google'}
+          <img src={AZURE_ICON_SVG_DATA_URI} alt="Azure" style={styles.azureIcon} />
+          {loading ? 'Redirecting...' : 'Sign in with Microsoft'}
         </button>
 
         <p style={styles.legalText}>
