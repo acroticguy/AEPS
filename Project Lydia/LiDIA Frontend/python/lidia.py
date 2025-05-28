@@ -23,7 +23,8 @@ class Lidia:
         val_instructions = """
             You'll be provided with messages, and I want you to reply with only "yes" if the contents of my message can be interpreted as a work related task. 
             If they're not, just reply "no". The tasks are supposed to be ticked off, so only tasks clearly defined with deliverables should be considered valid. 
-            Okay?"""
+            Okay?
+            """
         
         self.val_session = self.client.chats.create(
             model=self.validation_model,
@@ -39,10 +40,10 @@ class Lidia:
         if not len(res) == 1:
             print("Multiple users found in the database. Please check the database.")
             return
-        self.display_name = res[0]["display_name"]
-        self.email = res[0]["email"]
-        self.lidia_instructions = res[0]["lidia_instructions"]
-        self.work_scope = res[0]["work_scope"]
+        self.display_name: str = res[0]["display_name"].title()
+        self.email: str = res[0]["email"]
+        self.lidia_instructions: str = res[0]["lidia_instructions"]
+        self.work_scope: str = res[0]["work_scope"]
 
         print("Lidia session initialized!")
 
@@ -131,7 +132,7 @@ class Lidia:
         # Play TTS response
 
         lidia_tools.tts(lidia_res["message"])
-        print(f"Response from LLM: {lidia_res["message"]}")
+        print(f"Response from LLM: {lidia_res['message']}")
         if lidia_res["task_created"]:
             # Confirm task creation
             validation_prompt = f"{lidia_res['task']['task_name']} \n\n{lidia_res['task']['description']}"

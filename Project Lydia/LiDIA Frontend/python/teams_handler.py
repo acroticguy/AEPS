@@ -5,12 +5,10 @@ import requests
 import datetime as dt
 from datetime import datetime, timezone
 import json
-import time
-
 from lidia_tools import format_date
 
 def create_request(token, url):
-    headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+    headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',}
 
     response = requests.get(url, headers=headers)
     return response
@@ -104,7 +102,6 @@ class TeamsHandler:
 
         for chat in chats:
             if chat["chatType"] == "oneOnOne":
-                # print(f"Chat ID: {chat['id']}, Topic: {chat.get('topic', 'No topic')}")
                 if chat["lastMessagePreview"] is not None:
                     if not chat["lastMessagePreview"]["from"]["user"]["id"] == self.profile["id"]:
                         message = {
@@ -115,7 +112,6 @@ class TeamsHandler:
                         }
                         eligible_chats.append(message)
 
-        # WHAT WE'RE SUPPOSED TO RETURN
         chats = [msg for msg in eligible_chats if msg["timestamp"] > self.last_check]
         for chat in chats:
             chat["timestamp"] = chat["timestamp"].strftime('%a %d %b %Y, %I:%M%p')

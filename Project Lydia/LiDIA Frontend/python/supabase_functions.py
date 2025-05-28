@@ -111,8 +111,6 @@ class SBInstance:
         Returns:
             dict: The response from the Supabase database after posting the task.
         """
-
-
         response = (
             self.supabase.table("tasks")
             .insert(task)

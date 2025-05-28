@@ -12,7 +12,7 @@ def main():
     sbi = SBInstance()
     if in_electron:
         # If 3 arguments are provided, it means we are running from Electron. Arguments are:
-        # 1. Access Token, 2. Refresh Token, 3. MSAL Token
+        # 1. Access Token, 2. Refresh Token, 3. MSAL Token (Microsoft Authentication Library Token)
         os.chdir('python')
         access_token = sys.argv[1]
         refresh_token = sys.argv[2]

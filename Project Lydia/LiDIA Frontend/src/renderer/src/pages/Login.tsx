@@ -85,10 +85,10 @@ const Login: React.FC = () => {
           }
         } else {
             questionnaireComplete =
-                profile &&
-                profile.display_name &&
-                profile.lidia_instructions &&
-                profile.work_scope;
+              profile &&
+              profile.display_name !== null && profile.display_name !== '' &&
+              profile.lidia_instructions !== null && profile.lidia_instructions !== '' &&
+              profile.work_scope !== null && profile.work_scope !== '';
         }
 
         console.log('Is questionnaire complete?', questionnaireComplete);
@@ -184,8 +184,8 @@ const Login: React.FC = () => {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
-          scopes: 'email offline_access User.Read profile',
-          redirectTo: 'http://localhost:5173/dashboard', // This should point to your dashboard
+          scopes: 'email offline_access User.Read profile Chat.Read',
+          redirectTo: 'http://localhost:5173/login', // This should point to your dashboard
           prompt: 'select_account',
         },
       });
@@ -389,7 +389,7 @@ const Login: React.FC = () => {
             }}
             onMouseEnter={() => setIsTermsLinkHovered(true)}
             onMouseLeave={() => setIsTermsLinkHovered(false)}
-            target="_blank" rel="noopener noreferrer"
+            // Removed target="_blank" rel="noopener noreferrer"
           >
             Terms of Service
           </a>{' '}
@@ -402,7 +402,7 @@ const Login: React.FC = () => {
             }}
             onMouseEnter={() => setIsPrivacyLinkHovered(true)}
             onMouseLeave={() => setIsPrivacyLinkHovered(false)}
-            target="_blank" rel="noopener noreferrer"
+            // Removed target="_blank" rel="noopener noreferrer"
           >
             Privacy Policy
           </a>

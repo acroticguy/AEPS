@@ -4,7 +4,6 @@ from gtts import gTTS
 import pygame
 import io
 
-
 class Task(BaseModel):
     task_name: str
     description: str
@@ -34,7 +33,7 @@ class Reply(BaseModel):
 
     def to_dict(self):
         return {
-            "status": self.status,
+            "status": self.task_created,
             "response_message": self.message,
             "task": self.task.to_dict()
         }
