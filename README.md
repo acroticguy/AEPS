@@ -1,6 +1,6 @@
 # Project LiDIA: Your Intelligent Productivity Assistant
 
-LiDIA (Live Intelligent Desktop Assistant) is an AI-powered desktop application designed to streamline your daily workflow by intelligently managing Microsoft Teams notifications. LiDIA listens for incoming messages, processes them with advanced AI models, provides spoken summaries, and automatically suggests and organizes tasks based on your conversations.
+LiDIA (Large Inference and Dynamic Intelligence Assistant) is an AI-powered desktop application designed to streamline your daily workflow by intelligently managing Microsoft Teams notifications. LiDIA listens for incoming messages, processes them with advanced AI models, provides spoken summaries, and automatically suggests and organizes tasks based on your conversations.
 
 ## ✨ Features
 
